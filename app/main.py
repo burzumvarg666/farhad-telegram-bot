@@ -119,7 +119,7 @@ async def answer_text(chat_id: int, text: str, image_url: str | None = None) -> 
                 if not out:
                     out = await openai_chat("https://api.groq.com/openai/v1", GROQ_KEY, GROQ_FALLBACK, messages)
             elif provider == "gemini" and not image_url and GEMINI_KEY:
-                out = await gemini(chat_id, text, old)
+                out = await gemini(text, old)
             else:
                 continue
             if out:
