@@ -53,8 +53,10 @@ def reset_memory(chat_id: int) -> None:
 
 
 def route(text: str, has_image: bool = False) -> list[str]:
+    # One primary provider per request. Fallbacks are used only after a real failure.
     if has_image:
-        return ["deepseek", "gemini", "groq"]
+        return ["deepseek", "groq"]
+
     t = text.lower()
     complex_terms = [
         "analyze", "analysis", "reason", "reasoning", "debug", "code", "python",
@@ -63,17 +65,23 @@ def route(text: str, has_image: bool = False) -> list[str]:
         "الگوریتم", "فنی", "مقایسه", "تحقیق", "محاسبه", "اکسل", "origin", "api",
     ]
     if len(text) > 900 or any(x in t for x in complex_terms):
-        return ["deepseek", "gemini", "groq"]
-    return ["gemini", "deepseek", "groq"]
+        return ["deepseek", "groq"]
+    return ["gemini", "groq"]
 
 
-async def openai_chat(base_url: str, key: str, model: str, messages: list[dict[str, Any]]) -> str:
+async def openai_chat(
+    base_url: str,
+    key: str,
+    model: str,
+    messages: list[dict[str, Any]],
+) -> str:
     client = AsyncOpenAI(api_key=key, base_url=base_url)
     response = await client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=0.3,
         max_tokens=2500,
+        timeout=15.0,
     )
     return (response.choices[0].message.content or "").strip()
 
@@ -81,51 +89,87 @@ async def openai_chat(base_url: str, key: str, model: str, messages: list[dict[s
 async def gemini(text: str, msgs: list[dict[str, Any]]) -> str:
     if not GEMINI_KEY:
         raise RuntimeError("Gemini is not configured")
+
     contents = []
     for m in msgs:
-        contents.append({"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]})
+        contents.append({
+            "role": "user" if m["role"] == "user" else "model",
+            "parts": [{"text": m["content"]}],
+        })
     contents.append({"role": "user", "parts": [{"text": text}]})
+
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": contents,
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2500},
     }
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
-    async with httpx.AsyncClient(timeout=45) as client:
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    )
+    async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.post(url, json=payload)
         r.raise_for_status()
         data = r.json()
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
-async def answer_text(chat_id: int, text: str, image_url: str | None = None) -> tuple[str, str]:
+async def answer_text(
+    chat_id: int,
+    text: str,
+    image_url: str | None = None,
+) -> tuple[str, str]:
     old = history(chat_id)
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(old)
+
     if image_url:
-        messages.append({"role": "user", "content": [
-            {"type": "text", "text": text or "Analyze this image carefully and answer in Persian."},
-            {"type": "image_url", "image_url": {"url": image_url}},
-        ]})
+        messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": text or "Analyze this image carefully and answer in Persian.",
+                },
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ],
+        })
     else:
         messages.append({"role": "user", "content": text})
 
     for provider in route(text, bool(image_url)):
         try:
             if provider == "deepseek" and TOKENHARBOR_KEY:
-                out = await openai_chat("https://tokenharbor.ai/v1", TOKENHARBOR_KEY, DEEPSEEK_MODEL, messages)
+                out = await openai_chat(
+                    "https://tokenharbor.ai/v1",
+                    TOKENHARBOR_KEY,
+                    DEEPSEEK_MODEL,
+                    messages,
+                )
             elif provider == "groq" and GROQ_KEY:
-                out = await openai_chat("https://api.groq.com/openai/v1", GROQ_KEY, GROQ_MODEL, messages)
-                if not out:
-                    out = await openai_chat("https://api.groq.com/openai/v1", GROQ_KEY, GROQ_FALLBACK, messages)
+                out = await openai_chat(
+                    "https://api.groq.com/openai/v1",
+                    GROQ_KEY,
+                    GROQ_MODEL,
+                    messages,
+                )
+                if not out and GROQ_FALLBACK:
+                    out = await openai_chat(
+                        "https://api.groq.com/openai/v1",
+                        GROQ_KEY,
+                        GROQ_FALLBACK,
+                        messages,
+                    )
             elif provider == "gemini" and not image_url and GEMINI_KEY:
                 out = await gemini(text, old)
             else:
                 continue
+
             if out:
                 return out, provider
         except Exception:
             continue
+
     raise RuntimeError("No AI provider is currently available")
 
 
@@ -133,7 +177,7 @@ async def telegram(method: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not TELEGRAM_TOKEN:
         raise RuntimeError("Telegram token is not configured")
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.post(url, json=payload)
         r.raise_for_status()
         return r.json()
@@ -156,7 +200,13 @@ async def health():
         "ok": True,
         "telegram_configured": bool(TELEGRAM_TOKEN),
         "ai_configured": bool(GEMINI_KEY or GROQ_KEY or TOKENHARBOR_KEY),
-        "provider": "free-router",
+        "provider": "fast-router",
+        "routing": {
+            "normal": "gemini -> groq",
+            "complex": "deepseek -> groq",
+            "image": "deepseek -> groq",
+        },
+        "timeouts_seconds": 15,
         "gemini_model": GEMINI_MODEL,
         "deepseek_model": DEEPSEEK_MODEL,
         "groq_model": GROQ_MODEL,
@@ -177,23 +227,43 @@ async def telegram_webhook(request: Request):
     text = (message.get("text") or message.get("caption") or "").strip()
 
     if text.startswith("/start"):
-        await send_long(chat_id, "سلام. من دستیار هوش مصنوعی فارهاد هستم.\n\nپیام متنی بفرست، یا عکس ارسال کن تا بررسی‌اش کنم.\n\nدستورات: /help /status /reset /memory /about")
+        await send_long(
+            chat_id,
+            "سلام. من دستیار هوش مصنوعی فارهاد هستم.\n\n"
+            "پیام متنی بفرست، یا عکس ارسال کن تا بررسی‌اش کنم.\n\n"
+            "دستورات: /help /status /reset /memory /about",
+        )
         return {"ok": True}
     if text.startswith("/help"):
-        await send_long(chat_id, "/start شروع\n/help راهنما\n/status وضعیت سرویس\n/reset پاک کردن حافظه گفتگو\n/memory نمایش وضعیت حافظه\n/about درباره ربات")
+        await send_long(
+            chat_id,
+            "/start شروع\n/help راهنما\n/status وضعیت سرویس\n"
+            "/reset پاک کردن حافظه گفتگو\n/memory نمایش وضعیت حافظه\n/about درباره ربات",
+        )
         return {"ok": True}
     if text.startswith("/reset"):
         reset_memory(chat_id)
         await send_long(chat_id, "حافظه این گفتگو پاک شد.")
         return {"ok": True}
     if text.startswith("/memory"):
-        await send_long(chat_id, f"تعداد پیام‌های ذخیره‌شده: {len(history(chat_id))} از {MAX_MESSAGES}")
+        await send_long(
+            chat_id,
+            f"تعداد پیام‌های ذخیره‌شده: {len(history(chat_id))} از {MAX_MESSAGES}",
+        )
         return {"ok": True}
     if text.startswith("/status"):
-        await send_long(chat_id, "سرویس فعال است. مسیریابی هوشمند بین Gemini، DeepSeek V4.1 Flash و Groq انجام می‌شود.")
+        await send_long(
+            chat_id,
+            "سرویس فعال است. برای پاسخ سریع، درخواست‌های عادی مستقیم به Gemini "
+            "و درخواست‌های پیچیده به DeepSeek V4.1 Flash می‌روند. Groq فقط fallback است.",
+        )
         return {"ok": True}
     if text.startswith("/about"):
-        await send_long(chat_id, "Farhad Telegram AI Bot\nGeneral-purpose AI assistant with session memory and multi-provider fallback.")
+        await send_long(
+            chat_id,
+            "Farhad Telegram AI Bot\n"
+            "General-purpose AI assistant with session memory and multi-provider fallback.",
+        )
         return {"ok": True}
 
     image_url = None
@@ -210,10 +280,14 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     try:
-        out, provider = await answer_text(chat_id, text, image_url)
+        out, _provider = await answer_text(chat_id, text, image_url)
         remember(chat_id, "user", text or "[image]")
         remember(chat_id, "assistant", out)
         await send_long(chat_id, out)
-    except Exception as exc:
-        await send_long(chat_id, "فعلاً هیچ مسیر رایگان هوش مصنوعی پاسخ‌گو نیست. چند لحظه بعد دوباره امتحان کن.")
+    except Exception:
+        await send_long(
+            chat_id,
+            "فعلاً هیچ مسیر رایگان هوش مصنوعی پاسخ‌گو نیست. چند لحظه بعد دوباره امتحان کن.",
+        )
+
     return {"ok": True}
