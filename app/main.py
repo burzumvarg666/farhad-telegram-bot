@@ -1,5 +1,7 @@
 import os
 import time
+import base64
+import mimetypes
 from typing import Any
 
 import httpx
@@ -191,6 +193,18 @@ async def telegram(method: str, payload: dict[str, Any]) -> dict[str, Any]:
         return r.json()
 
 
+async def download_telegram_image(file_path: str) -> str:
+    url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        data = r.content
+
+    mime_type = mimetypes.guess_type(file_path)[0] or "image/jpeg"
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
 async def send_long(chat_id: int, text: str) -> None:
     chunks = [text[i:i + 3900] for i in range(0, len(text), 3900)] or [""]
     for chunk in chunks:
@@ -211,8 +225,8 @@ async def health():
         "provider": "fast-router",
         "routing": {
             "normal": "deepseek-v4-flash -> gemini -> groq",
-            "complex": "deepseek -> groq",
-            "image": "deepseek -> groq",
+            "complex": "deepseek-v4.1-flash -> groq",
+            "image": "deepseek-v4.1-flash -> groq",
         },
         "timeouts_seconds": 15,
         "gemini_model": GEMINI_MODEL,
@@ -282,7 +296,7 @@ async def telegram_webhook(request: Request):
             file_id = message["photo"][-1]["file_id"]
             info = await telegram("getFile", {"file_id": file_id})
             file_path = info["result"]["file_path"]
-            image_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
+            image_url = await download_telegram_image(file_path)
         except Exception:
             image_url = None
 
