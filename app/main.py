@@ -15,6 +15,7 @@ GROQ_KEY = os.getenv("GROQ_API_KEY")
 TOKENHARBOR_KEY = os.getenv("TOKENHARBOR_API_KEY")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+DEEPSEEK_FAST_MODEL = os.getenv("DEEPSEEK_FAST_MODEL", "deepseek-v4-flash:free")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4.1-flash:free")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_FALLBACK = os.getenv("GROQ_FALLBACK", "qwen/qwen3.8-27b")
@@ -66,7 +67,7 @@ def route(text: str, has_image: bool = False) -> list[str]:
     ]
     if len(text) > 900 or any(x in t for x in complex_terms):
         return ["deepseek", "groq"]
-    return ["gemini", "groq"]
+    return ["deepseek_fast", "gemini", "groq"]
 
 
 async def openai_chat(
@@ -139,7 +140,14 @@ async def answer_text(
 
     for provider in route(text, bool(image_url)):
         try:
-            if provider == "deepseek" and TOKENHARBOR_KEY:
+            if provider == "deepseek_fast" and TOKENHARBOR_KEY:
+                out = await openai_chat(
+                    "https://tokenharbor.ai/v1",
+                    TOKENHARBOR_KEY,
+                    DEEPSEEK_FAST_MODEL,
+                    messages,
+                )
+            elif provider == "deepseek" and TOKENHARBOR_KEY:
                 out = await openai_chat(
                     "https://tokenharbor.ai/v1",
                     TOKENHARBOR_KEY,
@@ -254,8 +262,9 @@ async def telegram_webhook(request: Request):
     if text.startswith("/status"):
         await send_long(
             chat_id,
-            "سرویس فعال است. برای پاسخ سریع، درخواست‌های عادی مستقیم به Gemini "
-            "و درخواست‌های پیچیده به DeepSeek V4.1 Flash می‌روند. Groq فقط fallback است.",
+            "سرویس فعال است. درخواست‌های عادی ابتدا به DeepSeek V4 Flash، "
+            "و درخواست‌های پیچیده/تصویری به DeepSeek V4.1 Flash می‌روند. "
+            "Gemini و Groq فقط fallback هستند.",
         )
         return {"ok": True}
     if text.startswith("/about"):
