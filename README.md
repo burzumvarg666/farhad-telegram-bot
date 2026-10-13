@@ -5,7 +5,7 @@ A Persian/English general-purpose AI assistant built with FastAPI and deployed o
 ## Current features
 
 - Telegram webhook at `/api/telegram`
-- Interactive inline menu for help, status, memory status, and bot information
+- Persistent reply-keyboard menu for help, status, memory status, and bot information
 - Conversational assistant personality: professional, direct, and lightly witty
 - Image input and analysis through the existing vision route
 - Multi-provider routing and fallback using the existing environment configuration
