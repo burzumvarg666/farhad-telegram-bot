@@ -122,6 +122,16 @@ async def remember_durable(chat_id: int, role: str, content: str) -> None:
     if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
         try:
             await _supabase_request("POST", "bot_memory", payload={"chat_id": chat_id, "role": role, "content": content})
+            recent = await _supabase_request(
+                "GET", "bot_memory",
+                params={"chat_id": f"eq.{chat_id}", "select": "id", "order": "created_at.desc", "limit": str(MAX_MESSAGES)},
+            )
+            if recent and len(recent) >= MAX_MESSAGES:
+                keep_ids = ",".join(str(row["id"]) for row in recent)
+                await _supabase_request(
+                    "DELETE", "bot_memory",
+                    params={"chat_id": f"eq.{chat_id}", "id": f"not.in.({keep_ids})"},
+                )
         except Exception:
             pass
 
