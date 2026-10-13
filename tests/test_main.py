@@ -13,7 +13,7 @@ class BotBehaviorTests(unittest.TestCase):
         actions = [button["text"] for row in keyboard for button in row]
         self.assertEqual(
             actions,
-            ["گفتگو با هوش مصنوعی", "وضعیت حافظه", "راهنما", "وضعیت سرویس", "درباره ربات"],
+            ["گفتگو با هوش مصنوعی", "وضعیت حافظه", "راهنما", "وضعیت سرویس", "درباره ربات", "بازی و چالش"],
         )
 
     def test_normal_text_keeps_fast_free_route(self):
