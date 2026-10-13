@@ -9,11 +9,11 @@ class BotBehaviorTests(unittest.TestCase):
             reset_memory(chat_id)
 
     def test_menu_has_expected_actions(self):
-        keyboard = main_menu()["inline_keyboard"]
-        actions = [button["callback_data"] for row in keyboard for button in row]
+        keyboard = main_menu()["keyboard"]
+        actions = [button["text"] for row in keyboard for button in row]
         self.assertEqual(
             actions,
-            ["menu:ask", "menu:memory", "menu:help", "menu:status", "menu:about"],
+            ["گفتگو با هوش مصنوعی", "وضعیت حافظه", "راهنما", "وضعیت سرویس", "درباره ربات"],
         )
 
     def test_normal_text_keeps_fast_free_route(self):
