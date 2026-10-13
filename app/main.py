@@ -95,7 +95,7 @@ def reset_memory(chat_id: int) -> None:
 async def _supabase_request(method: str, table: str, *, params=None, payload=None):
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return None
-    headers = {"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
+    headers = {"apikey": SUPABASE_SERVICE_ROLE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=representation"}
     async with httpx.AsyncClient(timeout=8.0) as client:
         response = await client.request(method, f"{SUPABASE_URL}/rest/v1/{table}", params=params, json=payload, headers=headers)
         response.raise_for_status()
