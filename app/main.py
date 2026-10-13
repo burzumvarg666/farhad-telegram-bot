@@ -38,20 +38,25 @@ SYSTEM_PROMPT = (
 
 
 def main_menu() -> dict[str, Any]:
+    # Reply-keyboard buttons arrive as normal Telegram messages, so this menu
+    # does not depend on callback_query being enabled in the webhook.
     return {
-        "inline_keyboard": [
+        "keyboard": [
             [
-                {"text": "گفتگو با هوش مصنوعی", "callback_data": "menu:ask"},
-                {"text": "وضعیت حافظه", "callback_data": "menu:memory"},
+                {"text": "گفتگو با هوش مصنوعی"},
+                {"text": "وضعیت حافظه"},
             ],
             [
-                {"text": "راهنما", "callback_data": "menu:help"},
-                {"text": "وضعیت سرویس", "callback_data": "menu:status"},
+                {"text": "راهنما"},
+                {"text": "وضعیت سرویس"},
             ],
             [
-                {"text": "درباره ربات", "callback_data": "menu:about"},
+                {"text": "درباره ربات"},
             ],
-        ]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
+        "input_field_placeholder": "پیامت رو بنویس...",
     }
 
 
@@ -329,6 +334,18 @@ async def telegram_webhook(request: Request):
 
     chat_id = message["chat"]["id"]
     text = (message.get("text") or message.get("caption") or "").strip()
+
+    # Reply-keyboard labels are ordinary messages; translate them into actions.
+    menu_actions = {
+        "وضعیت حافظه": "/memory",
+        "راهنما": "/help",
+        "وضعیت سرویس": "/status",
+        "درباره ربات": "/about",
+    }
+    if text == "گفتگو با هوش مصنوعی":
+        await send_long(chat_id, "پیامت رو همین‌جا بنویس تا گفتگو رو ادامه بدیم.")
+        return {"ok": True}
+    text = menu_actions.get(text, text)
 
     if text.startswith("/start"):
         await send_menu(
